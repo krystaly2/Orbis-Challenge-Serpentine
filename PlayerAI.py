@@ -5,7 +5,6 @@ from PythonClientAPI.game.World import World
 from PythonClientAPI.game.TileUtils import TileUtils
 from PythonClientAPI.game.PathFinder import PathFinder
 
-
 class PlayerAI:
     def __init__(self):
         ''' Initialize! '''
@@ -17,13 +16,14 @@ class PlayerAI:
         self.TOP = 0
         self.BOTTOM = 0
         self.target_list = []
-        self.direction = None
+        self.init_direction = None
         self.init_target = (0,0)
         self.ind = 0
         self.dir_list = []
         self.first_move = (0,0)
         self.second_move = (0,0)
         self.square = ({"south": (-10, 0), "north": (10, 0)}, {"east": (0, 10), "west": (0, -10)})
+        self.direction = 0
         self.target = None
         self.is_init = True
 
@@ -49,6 +49,8 @@ class PlayerAI:
         # determine which option takes over the most tiles
         max_takeover = 0
         for destination, direction in options:
+            print(current_position)
+            print(destination)
             path = world.path.get_shortest_path(current_position, destination, avoid)
             if path is None:
                 continue
@@ -58,7 +60,10 @@ class PlayerAI:
                 desired_point = destination
                 self.direction = direction
         if max_takeover == 0:
-            return world.util.get_closest_capturable_territory_from(options[0][0], None)
+            target = world.util.get_closest_capturable_territory_from(current_position, [current_position])
+            if target is None:
+                return world.util.get_closest_capturable_territory_from(options[0][0])
+            return target
         else:
             return world.position_to_tile_map[desired_point]
 
@@ -97,13 +102,13 @@ class PlayerAI:
         self.rec_len = new_rec_len
 
     def dir_move(self, friendly_unit):
-        if self.direction == "right":
+        if self.init_direction == "right":
             return (friendly_unit.position[0]+1, friendly_unit.position[1])
-        elif self.direction == "up":
+        elif self.init_direction == "up":
             return (friendly_unit.position[0], friendly_unit.position[1]-1)
-        elif self.direction == "left":
+        elif self.init_direction == "left":
             return (friendly_unit.position[0]-1, friendly_unit.position[1])
-        elif self.direction == "down":
+        elif self.init_direction == "down":
             return (friendly_unit.position[0], friendly_unit.position[1]+1)
 
     def update_dir(self, friendly_unit):
@@ -112,41 +117,39 @@ class PlayerAI:
             self.second_move = (4,4)
             self.dir_list = ["up", "left", "down"]
             self.target_list.extend([(4, 2),(3,2), (3,self.TOP),(self.LEFT, self.TOP), (self.LEFT, 4)])
-            self.direction = "right"
+            self.init_direction = "right"
         elif friendly_unit.position == (26,3):
             self.first_move = (26,4)
             self.second_move = (25,4)
             self.dir_list = ["up", "right", "down"]
             self.target_list.extend([(25, 2),(26,2),(26,self.TOP),(self.RIGHT, self.TOP), (self.RIGHT, 4)])
-            self.direction = "left"
+            self.init_direction = "left"
         elif friendly_unit.position == (3,26):
             self.first_move = (3,25)
             self.second_move = (4, 25)
             self.dir_list = ["down", "left", "up"]
             self.target_list.extend([(4, 27), (3,27), (3,self.BOTTOM), (self.LEFT, self.BOTTOM), (self.LEFT, 25)])
-            self.direction = "right"
+            self.init_direction = "right"
         elif friendly_unit.position == (26,26):
             self.first_move = (26,25)
             self.second_move = (25,25)
             self.dir_list = ["down", "right", "up"]
             self.target_list.extend([(25,27), (26,27), (26,28), (self.RIGHT, self.BOTTOM), (self.RIGHT, 25)])
-            self.direction = "left"
+            self.init_direction = "left"
 
 
     def rec_2_move(self, friendly_unit):
-        # print("f:")
-        print(friendly_unit.position)
         if friendly_unit.position == self.target_list[self.ind]:
             self.ind += 1
             self.init_target = self.target_list[self.ind]
 
     def change_dir(self, dir_list):
         if self.units_taken == self.rec_len:
-            self.direction = dir_list[0]
+            self.init_direction = dir_list[0]
         elif self.units_taken == self.rec_len + 3:
-            self.direction = dir_list[1]
+            self.init_direction = dir_list[1]
         elif self.units_taken == 2*self.rec_len + 2:
-            self.direction = dir_list[2]
+            self.init_direction = dir_list[2]
 
     def update_boundary(self,world):
         self.LEFT = 1
@@ -163,7 +166,6 @@ class PlayerAI:
             print("Turn {0}: Disabled - skipping move.".format(str(self.turn_count)))
             self.target = None
             return
-
 
         if self.is_init == True:
             if self.turn_count == 1:
@@ -192,10 +194,6 @@ class PlayerAI:
                         world.path.get_next_point_in_shortest_path(friendly_unit.position, self.init_target))
                     return
                 self.is_init = False
-
-        # print("here////////////")
-        self.direction = 0
-
 
         # variables for friendly unit
         current_position = friendly_unit.position
@@ -253,8 +251,3 @@ class PlayerAI:
             position=str(friendly_unit.position),
             target=str(self.target.position)
         ))
-
-
-
-
-
