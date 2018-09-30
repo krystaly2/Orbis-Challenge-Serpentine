@@ -11,8 +11,44 @@ class PlayerAI:
         """ Initialize! """
         self.turn_count = 0             # game turn count
         self.target = None              # target to send unit to!
-        self.square = ({"south": (-10, 0), "north": (10, 0)}, {"east": (0, 10), "west": (0, -10)})
+        self.square = ({"west": (-10, 0), "east": (10, 0)}, {"north": (0, 10), "south": (0, -10)})
         self.direction = 0
+        self.running_away = False
+
+    def create_square(self, current_position, territory, avoid, world):
+        # determine best route to create a square, evaluating only south/north or west/east option
+        dir_1, dir_2 = self.square[self.direction].keys()
+        point_1 = (add_points(current_position, self.square[self.direction][dir_1]), not self.direction)
+        point_2 = (add_points(current_position, self.square[self.direction][dir_2]), not self.direction)
+        options = [point_1, point_2]
+
+        # if unit inside territory
+        if current_position in territory:
+            # determine best route to create a square, evaluating all option
+            dir_3, dir_4 = self.square[not self.direction].keys()
+            point_3 = (add_points(current_position, self.square[not self.direction][dir_3]), self.direction)
+            point_4 = (add_points(current_position, self.square[not self.direction][dir_4]), self.direction)
+            options.extend([point_3, point_4])
+
+        for point in options:
+            if not world.is_within_bounds(point[0]) or world.position_to_tile_map[point[0]].is_wall:
+                options.remove(point)
+
+        # determine which option takes over the most tiles
+        max_takeover = 0
+        for destination, direction in options:
+            path = world.path.get_shortest_path(current_position, destination, avoid)
+            if path is None:
+                continue
+            unfriendly_tiles = [world.position_to_tile_map[point].is_friendly for point in path].count(False)
+            if unfriendly_tiles > max_takeover:
+                max_takeover = unfriendly_tiles
+                desired_point = destination
+                self.direction = direction
+        if max_takeover == 0:
+            return world.util.get_closest_capturable_territory_from(options[0][0], None)
+        else:
+            return world.position_to_tile_map[desired_point]
 
     def do_move(self, world, friendly_unit, enemy_units):
         """
@@ -56,26 +92,7 @@ class PlayerAI:
 
         # if no target
         if self.target is None:
-            # determine best route to create a square
-            dir_1, dir_2 = self.square[self.direction].keys()
-            point_1 = add_points(current_position, self.square[self.direction][dir_1])
-            point_2 = add_points(current_position, self.square[self.direction][dir_2])
-            if not world.is_within_bounds(point_1):
-                self.target = world.position_to_tile_map[point_2]
-            elif not world.is_within_bounds(point_2):
-                self.target = world.position_to_tile_map[point_1]
-            else:
-                path_1 = world.path.get_shortest_path(current_position, point_1, avoid)
-                path_2 = world.path.get_shortest_path(current_position, point_2, avoid)
-                unfriendly_tiles_1 = [world.position_to_tile_map[point].is_friendly for point in path_1].count(False)
-                unfriendly_tiles_2 = [world.position_to_tile_map[point].is_friendly for point in path_2].count(False)
-                if unfriendly_tiles_1 > unfriendly_tiles_2:
-                    self.target = world.position_to_tile_map[point_1]
-                elif unfriendly_tiles_1 < unfriendly_tiles_2:
-                    self.target = world.position_to_tile_map[point_2]
-                else:
-                    self.target = world.util.get_closest_neutral_territory_from(point_2, None)
-            self.direction = 0 if self.direction else 1
+            self.target = self.create_square(current_position, friendly_unit.territory, avoid, world)
 
         # go for the kill if safe and nearby
         if closest_enemy_body is not None:
@@ -92,15 +109,20 @@ class PlayerAI:
             path_to_safety = world.path.get_shortest_path(current_position, closest_friendly_tile.position, avoid)
             distance_to_safety = len(path_to_safety)
             print("safety {0}".format(distance_to_safety))
-            for enemy in enemy_units:
-                if enemy_distance[enemy.uuid] <= distance_to_safety:
-                    print("RUNNNN")
-                    self.target = closest_friendly_tile
-                    break
+            if any(enemy_distance[enemy.uuid] <= distance_to_safety for enemy in enemy_units):
+                print("RUNNNN")
+                self.target = closest_friendly_tile
+                self.running_away = True
+            else:
+                if self.running_away is True:
+                    self.running_away = False
+                    # self.target = None
+
+        # unit is inside its territory
         else:
             for enemy in enemy_units:
                 if enemy_distance[enemy.uuid] <= 5:
-                    print("DANGEROUS")
+                    print("DANGEROUS, enemy distance {0}".format(enemy_distance[enemy.uuid]))
                     self.target = world.util.get_closest_neutral_territory_from(current_position, None)
                     avoid.add(enemy.position)
 
